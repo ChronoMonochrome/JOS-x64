@@ -1,0 +1,20 @@
+OBJDIRS += lib
+
+LIB_SRCFILES := \
+	lib/printfmt.c \
+	lib/readline.c \
+	lib/string.c
+
+LIB_OBJFILES := $(patsubst lib/%.c, $(OBJDIR)/lib/%.o, $(LIB_SRCFILES))
+
+$(OBJDIR)/lib/%.o: lib/%.c
+	@echo + cc $<
+	@mkdir -p $(@D)
+	$(V)$(CC) $(KERN_CFLAGS) -c -o $@ $<
+
+# This variable will be used by kern/Makefrag for linking
+LIB_BINARY := $(OBJDIR)/lib/libjos.a
+
+$(LIB_BINARY): $(LIB_OBJFILES)
+	@echo + ar $@
+	$(V)ar rcs $@ $(LIB_OBJFILES)

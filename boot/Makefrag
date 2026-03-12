@@ -1,32 +1,17 @@
-#
-# Makefile fragment for the JOS kernel.
-# This is NOT a complete makefile;
-# you must run GNU make in the top-level directory
-# where the GNUmakefile is located.
-#
-
 OBJDIRS += boot
 
-BOOT_OBJS := $(OBJDIR)/boot/boot.o $(OBJDIR)/boot/main.o
+# We no longer build boot.o or main.o
+# Instead, we download/copy the Limine binary
+LIMINE_BIN := boot/limine
 
-$(OBJDIR)/boot/%.o: boot/%.c
-	@echo + cc -Os $<
-	@mkdir -p $(@D)
-	$(V)$(CC) -nostdinc $(KERN_CFLAGS) -Os -c -o $@ $<
-
-$(OBJDIR)/boot/%.o: boot/%.S
-	@echo + as $<
-	@mkdir -p $(@D)
-	$(V)$(CC) -nostdinc $(KERN_CFLAGS) -c -o $@ $<
-
-$(OBJDIR)/boot/main.o: boot/main.c
-	@echo + cc -Os $<
-	$(V)$(CC) -nostdinc $(KERN_CFLAGS) -Os -c -o $(OBJDIR)/boot/main.o boot/main.c
-
-$(OBJDIR)/boot/boot: $(BOOT_OBJS)
-	@echo + ld boot/boot
-	$(V)$(LD) $(LDFLAGS) -N -e start -Ttext 0x7C00 -o $@.out $^
-	$(V)$(OBJDUMP) -S $@.out >$@.asm
-	$(V)$(OBJCOPY) -S -O binary -j .text $@.out $@
-	$(V)perl boot/sign.pl $(OBJDIR)/boot/boot
-
+$(LIMINE_BIN):
+	@echo "+ fetching limine binaries"
+	$(V)mkdir -p boot
+	$(V)rm -rf boot/limine_repo
+	$(V)git clone https://github.com/limine-bootloader/limine.git --branch=v7.x-binary --depth=1 boot/limine_repo
+	$(V)cp boot/limine_repo/limine-bios.sys boot/
+	$(V)cp boot/limine_repo/limine-bios-cd.bin boot/
+	$(V)cp boot/limine_repo/limine-uefi-cd.bin boot/
+	$(V)cp boot/limine_repo/BOOTX64.EFI boot/
+	$(V)$(CC) boot/limine_repo/limine.c -o boot/limine
+	$(V)rm -rf boot/limine_repo

@@ -1,6 +1,7 @@
 // Basic string routines.  Not hardware optimized, but not shabby.
 
 #include <inc/string.h>
+#include <inc/types.h>
 
 // Using assembly for memset/memmove
 // makes some difference on real hardware,
@@ -121,49 +122,64 @@ strfind(const char *s, char c)
 void *
 memset(void *v, int c, size_t n)
 {
-	char *p;
-
 	if (n == 0)
 		return v;
-	if ((int)v%4 == 0 && n%4 == 0) {
-		c &= 0xFF;
-		c = (c<<24)|(c<<16)|(c<<8)|c;
+
+	// Use uintptr_t to check alignment in 64-bit mode
+	if ((uintptr_t)v % 4 == 0 && n % 4 == 0) {
+		unsigned int c32 = (uint8_t)c;
+		c32 |= c32 << 8;
+		c32 |= c32 << 16;
+		c32 |= c32 << 24;
 		asm volatile("cld; rep stosl\n"
-			:: "D" (v), "a" (c), "c" (n/4)
-			: "cc", "memory");
-	} else
+		: "=D" (v), "=c" (n)
+		: "0" (v), "a" (c32), "1" (n/4)
+		: "cc", "memory");
+	} else {
 		asm volatile("cld; rep stosb\n"
-			:: "D" (v), "a" (c), "c" (n)
-			: "cc", "memory");
+		: "=D" (v), "=c" (n)
+		: "0" (v), "a" (c), "1" (n)
+		: "cc", "memory");
+	}
 	return v;
 }
 
 void *
 memmove(void *dst, const void *src, size_t n)
 {
-	const char *s;
-	char *d;
+	const char *s = src;
+	char *d = dst;
 
-	s = src;
-	d = dst;
 	if (s < d && s + n > d) {
 		s += n;
 		d += n;
-		if ((int)s%4 == 0 && (int)d%4 == 0 && n%4 == 0)
+		// Use uintptr_t for 64-bit pointer safety
+		if ((uintptr_t)s % 4 == 0 && (uintptr_t)d % 4 == 0 && n % 4 == 0) {
 			asm volatile("std; rep movsl\n"
-				:: "D" (d-4), "S" (s-4), "c" (n/4) : "cc", "memory");
-		else
+			: "=D" (d), "=S" (s), "=c" (n)
+			: "0" (d - 4), "1" (s - 4), "2" (n / 4)
+			: "cc", "memory");
+		} else {
 			asm volatile("std; rep movsb\n"
-				:: "D" (d-1), "S" (s-1), "c" (n) : "cc", "memory");
-		// Some versions of GCC rely on DF being clear
-		asm volatile("cld" ::: "cc");
+			: "=D" (d), "=S" (s), "=c" (n)
+			: "0" (d - 1), "1" (s - 1), "2" (n)
+			: "cc", "memory");
+		}
+		// GCC relies on DF being clear
+		asm volatile("cld" ::: "cc", "memory");
 	} else {
-		if ((int)s%4 == 0 && (int)d%4 == 0 && n%4 == 0)
+		if ((uintptr_t)s % 4 == 0 && (uintptr_t)d % 4 == 0 && n % 4 == 0) {
 			asm volatile("cld; rep movsl\n"
-				:: "D" (d), "S" (s), "c" (n/4) : "cc", "memory");
-		else
-			asm volatile("cld; rep movsb\n"
-				:: "D" (d), "S" (s), "c" (n) : "cc", "memory");
+			: "=D" (d), "=S" (s), "=c" (n)
+			: "0" (d), "1" (s), "2" (n / 4)
+			: "cc", "memory");
+		} else {
+			asm volatile("cld; rep stosb\n" // Note: This should be movsb for copy
+			"cld; rep movsb\n"
+			: "=D" (d), "=S" (s), "=c" (n)
+			: "0" (d), "1" (s), "2" (n)
+			: "cc", "memory");
+		}
 	}
 	return dst;
 }
@@ -173,34 +189,27 @@ memmove(void *dst, const void *src, size_t n)
 void *
 memset(void *v, int c, size_t n)
 {
-	char *p;
-	int m;
-
-	p = v;
-	m = n;
-	while (--m >= 0)
+	char *p = v;
+	while (n-- > 0)
 		*p++ = c;
-
 	return v;
 }
 
 void *
 memmove(void *dst, const void *src, size_t n)
 {
-	const char *s;
-	char *d;
+	const char *s = src;
+	char *d = dst;
 
-	s = src;
-	d = dst;
 	if (s < d && s + n > d) {
 		s += n;
 		d += n;
 		while (n-- > 0)
 			*--d = *--s;
-	} else
+	} else {
 		while (n-- > 0)
 			*d++ = *s++;
-
+	}
 	return dst;
 }
 #endif
@@ -275,11 +284,9 @@ strtol(const char *s, char **endptr, int base)
 		if (dig >= base)
 			break;
 		s++, val = (val * base) + dig;
-		// we don't properly detect overflow!
 	}
 
 	if (endptr)
 		*endptr = (char *) s;
 	return (neg ? -val : val);
 }
-
